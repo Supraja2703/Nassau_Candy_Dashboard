@@ -1,27 +1,66 @@
-# -*- coding: utf-8 -*-
-"""
-Nassau Candy Distributor — Decision Intelligence Dashboard v3.0
-Factory Reallocation & Shipping Optimization
-UPGRADED: All critical gaps fixed — real cost modeling, MILP-style optimization,
-bootstrap confidence, cross-validation, capacity constraints, seasonal features,
-reproducible results, data validation, and production-grade architecture.
-"""
-
-import warnings, os, math, datetime
-warnings.filterwarnings("ignore")
+import streamlit as st
+import pandas as pd
 import numpy as np
-np.random.seed(42)  # ✅ FIX: Global reproducibility
+import os
+import warnings
 
-# ─────────────────────────────────────────────
-# API CONFIGURATION
-# ─────────────────────────────────────────────
-# ── API KEY SETUP ──
-# Option 1 (recommended): set environment variable ANTHROPIC_API_KEY
-# Option 2: paste your key directly below between the quotes
-# API key: loaded from env var at module level.
-# st.secrets and runtime UI input are resolved inside the dashboard after st is imported.
+warnings.filterwarnings("ignore")
+
+st.set_page_config(
+    page_title="Nassau Candy Dashboard",
+    layout="wide"
+)
+
+np.random.seed(42)
+
+# SESSION STATE
+if "ui_lang" not in st.session_state:
+    st.session_state["ui_lang"] = "en"
+
+# API KEY (keep only once)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# ================================
+# DATA LOADING (CRITICAL FIX)
+# ================================
+@st.cache_data
+def load_data():
+    df = pd.read_csv("dataset.csv")
+
+    # ✅ Clean column names
+    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.replace(" ", "_")
+
+    # ✅ Convert dates safely
+    for col in ["Order_Date", "Ship_Date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    # ✅ Create Lead Time
+    if "Ship_Date" in df.columns and "Order_Date" in df.columns:
+        df["Lead_Time"] = (df["Ship_Date"] - df["Order_Date"]).dt.days
+
+    # ✅ Convert numeric
+    if "Lead_Time" in df.columns:
+        df["Lead_Time"] = pd.to_numeric(df["Lead_Time"], errors="coerce")
+
+    # ✅ Fill missing values
+    if "Lead_Time" in df.columns:
+        df["Lead_Time"] = df["Lead_Time"].fillna(df["Lead_Time"].median())
+
+    # ✅ Safety column
+    if "Ship_Mode" not in df.columns:
+        df["Ship_Mode"] = "Standard Class"
+
+    return df
+# LOAD DATA
+df = load_data()
+# FIX COLUMN NAMES (AUTO-FIX EVERYTHING)
+df.columns = df.columns.str.strip()
+df.columns = df.columns.str.replace(" ", "_")
+
+# OPTIONAL DEBUG (you can remove later)
+st.write("Columns:", df.columns)
 
 
 # ─────────────────────────────────────────────
@@ -43,7 +82,7 @@ _UI_LANGS = {
 _T = {
 "en": {
     "platform":"DECISION INTELLIGENCE PLATFORM",
-    "global_filters":"🎯 Global Filters","division":"Division","region":"Region","ship_mode":"Ship Mode",
+    "global_filters":"🎯 Global Filters","division":"Division","region":"Region","ship_mode":"Ship_Mode",
     "opt_priority":"⚙️ Optimisation Priority","speed_profit":"🏎 Speed  ←→  Profit 💰",
     "top_n":"Top-N Recommendations","cap_threshold":"🏭 Capacity Threshold",
     "cap_warn":"Warn at utilisation %","ai_assistant":"🤖 AI Assistant",
@@ -3367,7 +3406,7 @@ def dark(fig, title="", h=360):
 @st.cache_data(show_spinner=False)
 def validate_data(df):
     issues, warnings_list, stats = [], [], {}
-    required = ["Order Date","Ship Date","Ship Mode","Division","Region","Product Name","Sales","Units","Gross Profit","Cost"]
+    required = ["Order Date","Ship_Date","Ship_Mode","Division","Region","Product Name","Sales","Units","Gross Profit","Cost"]
     missing_cols = [c for c in required if c not in df.columns]
     if missing_cols: issues.append(f"Missing columns: {missing_cols}")
 
@@ -3411,14 +3450,27 @@ def load_data():
         st.error("❌ dataset.csv not found. Place it in the same folder as this script.")
         st.stop()
 
-    for c in ["Order Date","Ship Date"]:
+    for c in ["Order Date","Ship_Date"]:
         df[c] = pd.to_datetime(df[c], dayfirst=True, errors="coerce")
 
-    df["Lead Time"] = (df["Ship Date"] - df["Order Date"]).dt.days.clip(0, 365)
-    for sm, d in SHIP_DAYS.items():
-        df.loc[df["Ship Mode"].eq(sm) & df["Lead Time"].isna(), "Lead Time"] = d
-    df["Lead Time"] = df["Lead Time"].fillna(5)
+    df["Lead Time"] = (df["Ship_Date"] - df["Order Date"]).dt.days.clip(0, 365)
+    # FIX COLUMN NAMES
+df.columns = df.columns.str.strip()
+df.columns = df.columns.str.replace(" ", "_")
 
+# CONVERT LEAD TIME SAFELY
+if "Lead_Time" in df.columns:
+    df["Lead_Time"] = pd.to_numeric(df["Lead_Time"], errors="coerce")
+
+# FILL BASED ON SHIP MODE
+if "Ship_Mode" in df.columns and "Lead_Time" in df.columns:
+    for sm, d in SHIP_DAYS.items():
+        mask = (df["Ship_Mode"] == sm) & (df["Lead_Time"].isna())
+        df.loc[mask, "Lead_Time"] = float(d)
+
+# FINAL FILL
+if "Lead_Time" in df.columns:
+    df["Lead_Time"] = df["Lead_Time"].fillna(5)
     df["Factory"] = df["Product Name"].map(PRODUCT_FACTORY).fillna("Unknown")
     df["Geo Distance KM"] = df.apply(
         lambda r: fac_dist(r["Factory"], r["Region"]) if r["Factory"] in FACTORIES else np.nan, axis=1)
@@ -3426,7 +3478,7 @@ def load_data():
     df["Profit Margin"] = (df["Gross Profit"] / df["Sales"].replace(0, np.nan)).clip(0, 1).fillna(0.4)
     df["Order Month"]   = df["Order Date"].dt.month.fillna(6).astype(int)
     df["Order Quarter"] = ((df["Order Month"]-1)//3+1).astype(int)
-    df["Ship Mode Days"] = df["Ship Mode"].map(SHIP_DAYS).fillna(5)
+    df["Ship Mode Days"] = df["Ship_Mode"].map(SHIP_DAYS).fillna(5)
 
     # ✅ Seasonal features
     df["Is Holiday Season"] = df["Order Month"].isin(HOLIDAY_MONTHS).astype(int)
@@ -3435,7 +3487,7 @@ def load_data():
 
     # ✅ Real transport cost
     df["Transport Cost"] = df.apply(
-        lambda r: compute_transport_cost(r["Factory"], r["Region"], r["Ship Mode"], r["Units"], r["Sales"])
+        lambda r: compute_transport_cost(r["Factory"], r["Region"], r["Ship_Mode"], r["Units"], r["Sales"])
         if r["Factory"] in FACTORIES else 0, axis=1)
     df["Net Profit"] = df["Gross Profit"] - df["Transport Cost"]
     df["Net Margin"]  = (df["Net Profit"] / df["Sales"].replace(0,np.nan)).clip(-1,1).fillna(0)
@@ -3801,7 +3853,7 @@ def main():
         prod_mg   = _df.groupby("Product Name")["Net Margin"].mean().sort_values(ascending=False)
         prod_lt   = _df.groupby("Product Name")["Lead Time"].mean()
         prod_ord  = _df.groupby("Product Name")["Lead Time"].count()
-        mode_lt   = _df.groupby("Ship Mode")["Lead Time"].mean().sort_values()
+        mode_lt   = _df.groupby("Ship_Mode")["Lead Time"].mean().sort_values()
         div_mg    = _df.groupby("Division")["Net Margin"].mean().sort_values(ascending=False)
         div_sales = _df.groupby("Division")["Sales"].sum()
         hol       = _df[_df["Is Holiday Season"]==1]["Lead Time"].mean()
@@ -4003,7 +4055,7 @@ def main():
         ''', unsafe_allow_html=True)
         div_f  = st.selectbox(_tx("division"),  ["All"]+sorted(df["Division"].unique().tolist()))
         reg_f  = st.selectbox(_tx("region"),    ["All"]+sorted(df["Region"].unique().tolist()))
-        ship_f = st.selectbox(_tx("ship_mode"), ["All"]+sorted(df["Ship Mode"].unique().tolist()))
+        ship_f = st.selectbox(_tx("ship_mode"), ["All"]+sorted(df["Ship_Mode"].unique().tolist()))
         st.markdown("---")
 
         st.markdown(f'''
@@ -4088,7 +4140,7 @@ def main():
     fdf = df.copy()
     if div_f  != "All": fdf = fdf[fdf["Division"]  == div_f]
     if reg_f  != "All": fdf = fdf[fdf["Region"]    == reg_f]
-    if ship_f != "All": fdf = fdf[fdf["Ship Mode"] == ship_f]
+    if ship_f != "All": fdf = fdf[fdf["Ship_Mode"] == ship_f]
 
     # ═══════════ HERO ═══════════
     avg_lt    = fdf["Lead Time"].mean()
@@ -4544,7 +4596,7 @@ def main():
         s1,s2,s3 = st.columns(3)
         with s1: sim_prod = st.selectbox(_tx("product"), sorted(PRODUCT_FACTORY.keys()))
         with s2: sim_reg  = st.selectbox(_tx("target_region"), list(REGION_CENTROIDS.keys()))
-        with s3: sim_ship = st.selectbox("Ship Mode", list(SHIP_DAYS.keys()))
+        with s3: sim_ship = st.selectbox("Ship_Mode", list(SHIP_DAYS.keys()))
 
         cur_fac  = PRODUCT_FACTORY[sim_prod]
         pdf      = df[df["Product Name"]==sim_prod]
@@ -5368,7 +5420,7 @@ def main():
                 return "product"
             if any(w in q for w in ["region","pacific","atlantic","gulf","interior","area","geography","where","which region"]):
                 return "region"
-            if any(w in q for w in ["ship mode","shipping mode","standard class","first class","second class","same day","upgrade mode"]):
+            if any(w in q for w in ["Ship_Mode","shipping mode","standard class","first class","second class","same day","upgrade mode"]):
                 return "shipmode"
             if any(w in q for w in ["model","accuracy","predict","confidence","r2","rmse","ml","machine learning","algorithm","how accurate"]):
                 return "ml_model"
