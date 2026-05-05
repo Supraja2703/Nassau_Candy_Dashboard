@@ -3410,10 +3410,10 @@ def validate_data(df):
     missing_cols = [c for c in required if c not in df.columns]
     if missing_cols: issues.append(f"Missing columns: {missing_cols}")
 
-    if "Lead Time" in df.columns:
-        bad_lt = (df["Lead Time"] > 365).sum()
+    if "Lead_Time" in df.columns:
+        bad_lt = (df["Lead_Time"] > 365).sum()
         if bad_lt > 0: warnings_list.append(f"{bad_lt:,} orders have lead time > 365 days -- likely data entry errors, clipped to 365")
-        negative_lt = (df["Lead Time"] < 0).sum()
+        negative_lt = (df["Lead_Time"] < 0).sum()
         if negative_lt > 0: issues.append(f"{negative_lt:,} orders have negative lead time -- check Ship/Order date fields")
 
     null_pct = (df.isnull().sum() / len(df) * 100).round(1)
@@ -3460,7 +3460,7 @@ def load_data():
 
     # LEAD TIME
     if "Ship_Date" in df.columns and "Order Date" in df.columns:
-        df["Lead Time"] = (df["Ship_Date"] - df["Order Date"]).dt.days.clip(0, 365)
+        df["Lead_Time"] = (df["Ship_Date"] - df["Order Date"]).dt.days.clip(0, 365)
 
     # 🔥 EVERYTHING BELOW MUST BE INSIDE FUNCTION
 
@@ -3488,7 +3488,7 @@ def train_ml(df):
                  "Profit Margin","Order Quarter","Is Holiday Season","Is Weekend","Transport Cost"]
     cat_feats = ["Region","Division","Factory"]
 
-    data = df[num_feats+cat_feats+["Lead Time"]].dropna().copy()
+    data = df[num_feats+cat_feats+["Lead_Time"]].dropna().copy()
     le_map = {}
     for c in cat_feats:
         le = LabelEncoder()
@@ -3497,7 +3497,7 @@ def train_ml(df):
 
     fcols = num_feats + [c+"_enc" for c in cat_feats]
     X = data[fcols].values
-    y = data["Lead Time"].values
+    y = data["Lead_Time"].values
 
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
@@ -3561,11 +3561,11 @@ def smart_confidence(rmse, n_samples, bootstrap_std=None):
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def cluster_routes(df):
-    cdf = df[["Geo Distance KM","Lead Time","Net Margin","Sales","Is Holiday Season"]].dropna().copy()
+    cdf = df[["Geo Distance KM","Lead_Time","Net Margin","Sales","Is Holiday Season"]].dropna().copy()
     sc = StandardScaler()
     Xc = sc.fit_transform(cdf.values)
     cdf["Cluster"] = KMeans(n_clusters=4, random_state=42, n_init=12).fit_predict(Xc)
-    centers = cdf.groupby("Cluster")["Lead Time"].mean().sort_values()
+    centers = cdf.groupby("Cluster")["Lead_Time"].mean().sort_values()
     names = ["🚀 Fast & Efficient","📦 Standard Ops","💰 High-Value Routes","⚠️ Slow & At-Risk"]
     rename = {c: names[i] for i,(c,_) in enumerate(centers.items())}
     cdf["Cluster Label"] = cdf["Cluster"].map(rename)
@@ -3632,23 +3632,23 @@ def check_capacity(df, proposed_assignments):
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def _agg_factory_lead(df):
-    return df.groupby("Factory")["Lead Time"].agg(["mean","std","count"]).reset_index()
+    return df.groupby("Factory")["Lead_Time"].agg(["mean","std","count"]).reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_factory_stats(df):
     return df.groupby("Factory").agg(
-        Orders=("Lead Time","count"), Lead=("Lead Time","mean"),
+        Orders=("Lead_Time","count"), Lead=("Lead_Time","mean"),
         NetMg=("Net Margin","mean"), Dist=("Geo Distance KM","mean"),
         TC=("Transport Cost","mean")
     ).reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_heatmap(df):
-    return df.groupby(["Factory","Region"])["Lead Time"].mean().reset_index()
+    return df.groupby(["Factory","Region"])["Lead_Time"].mean().reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_seasonal(df):
-    return df.groupby(["Order Month","Is Holiday Season"])["Lead Time"].mean().reset_index()
+    return df.groupby(["Order Month","Is Holiday Season"])["Lead_Time"].mean().reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_division_profit(df):
@@ -3667,14 +3667,14 @@ def _agg_product_margin(df):
 @st.cache_data(show_spinner=False)
 def _agg_cluster_summary(cdf):
     return cdf.groupby("Cluster Label").agg(
-        Orders=("Lead Time","count"), AvgLead=("Lead Time","mean"),
+        Orders=("Lead_Time","count"), AvgLead=("Lead_Time","mean"),
         AvgDist=("Geo Distance KM","mean"), AvgMargin=("Net Margin","mean")
     ).reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_monthly(df):
     mon = df.groupby(df["Order Date"].dt.to_period("M")).agg(
-        Orders=("Lead Time","count"), Lead=("Lead Time","mean"),
+        Orders=("Lead_Time","count"), Lead=("Lead_Time","mean"),
         NetProfit=("Net Profit","sum"), Holiday=("Is Holiday Season","max")
     ).reset_index()
     mon["Order Date"] = mon["Order Date"].astype(str)
@@ -3683,17 +3683,17 @@ def _agg_monthly(df):
 @st.cache_data(show_spinner=False)
 def _agg_division_scatter(df):
     return df.groupby("Division").agg(
-        Lead=("Lead Time","mean"), Sales=("Sales","sum"), NetMg=("Net Margin","mean")
+        Lead=("Lead_Time","mean"), Sales=("Sales","sum"), NetMg=("Net Margin","mean")
     ).reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_region_radar(df):
-    return df.groupby("Region").agg(Lead=("Lead Time","mean")).reset_index()
+    return df.groupby("Region").agg(Lead=("Lead_Time","mean")).reset_index()
 
 @st.cache_data(show_spinner=False)
 def _agg_map_factory(df):
     return df.groupby("Factory").agg(
-        Orders=("Lead Time","count"), Lead=("Lead Time","mean"),
+        Orders=("Lead_Time","count"), Lead=("Lead_Time","mean"),
         Sales=("Sales","sum"), TC=("Transport Cost","mean"), NetMg=("Net Margin","mean")
     ).reset_index()
 
@@ -3710,7 +3710,7 @@ def _compute_kpi_trends(df):
         p = prior[col].mean()  if agg == "mean" else prior[col].sum()
         return float(((r - p) / p * 100) if p != 0 else 0.0)
     return {
-        "lt_delta":    _d("Lead Time"),
+        "lt_delta":    _d("Lead_Time"),
         "mg_delta":    _d("Net Margin"),
         "sales_delta": _d("Sales", "sum"),
         "tc_delta":    _d("Transport Cost"),
@@ -3720,7 +3720,7 @@ def _compute_kpi_trends(df):
 def _generate_ticker_alerts(df):
     """Auto-detect live network anomalies. Returns list of (severity, message)."""
     alerts = []
-    fac_lt = df.groupby("Factory")["Lead Time"].mean()
+    fac_lt = df.groupby("Factory")["Lead_Time"].mean()
     reg_tc = df.groupby("Region")["Transport Cost"].mean()
     worst_fac = fac_lt.idxmax(); best_fac = fac_lt.idxmin()
     gap = fac_lt.max() - fac_lt.min()
@@ -3732,8 +3732,8 @@ def _generate_ticker_alerts(df):
     if ratio > 2.5:
         alerts.append(("critical",
             f"💸 {worst_reg} cost is {ratio:.1f}× {best_reg} — primary P&L leak"))
-    hol = df[df["Is Holiday Season"]==1]["Lead Time"].mean()
-    non = df[df["Is Holiday Season"]==0]["Lead Time"].mean()
+    hol = df[df["Is Holiday Season"]==1]["Lead_Time"].mean()
+    non = df[df["Is Holiday Season"]==0]["Lead_Time"].mean()
     if (hol - non) > 0.3:
         alerts.append(("warning",
             f"📅 Holiday months add +{hol-non:.1f}d lead time — pre-position inventory"))
@@ -3826,21 +3826,21 @@ def main():
     @st.cache_data(show_spinner=False)
     def _build_chat_insights(_df, _best_name, _best_r2, _cv_rmse, _cv_std, _confidence, _ci_low, _ci_high):
         """Precompute all analytics for chatbot + dashboard. Runs once, cached for session."""
-        fac_lt    = _df.groupby("Factory")["Lead Time"].mean()
+        fac_lt    = _df.groupby("Factory")["Lead_Time"].mean()
         fac_tc    = _df.groupby("Factory")["Transport Cost"].mean()
         fac_mg    = _df.groupby("Factory")["Net Margin"].mean()
-        fac_ord   = _df.groupby("Factory")["Lead Time"].count()
-        reg_lt    = _df.groupby("Region")["Lead Time"].mean()
+        fac_ord   = _df.groupby("Factory")["Lead_Time"].count()
+        reg_lt    = _df.groupby("Region")["Lead_Time"].mean()
         reg_tc    = _df.groupby("Region")["Transport Cost"].mean()
-        reg_ord   = _df.groupby("Region")["Lead Time"].count()
+        reg_ord   = _df.groupby("Region")["Lead_Time"].count()
         prod_mg   = _df.groupby("Product Name")["Net Margin"].mean().sort_values(ascending=False)
-        prod_lt   = _df.groupby("Product Name")["Lead Time"].mean()
-        prod_ord  = _df.groupby("Product Name")["Lead Time"].count()
-        mode_lt   = _df.groupby("Ship_Mode")["Lead Time"].mean().sort_values()
+        prod_lt   = _df.groupby("Product Name")["Lead_Time"].mean()
+        prod_ord  = _df.groupby("Product Name")["Lead_Time"].count()
+        mode_lt   = _df.groupby("Ship_Mode")["Lead_Time"].mean().sort_values()
         div_mg    = _df.groupby("Division")["Net Margin"].mean().sort_values(ascending=False)
         div_sales = _df.groupby("Division")["Sales"].sum()
-        hol       = _df[_df["Is Holiday Season"]==1]["Lead Time"].mean()
-        non_hol   = _df[_df["Is Holiday Season"]==0]["Lead Time"].mean()
+        hol       = _df[_df["Is Holiday Season"]==1]["Lead_Time"].mean()
+        non_hol   = _df[_df["Is Holiday Season"]==0]["Lead_Time"].mean()
         tc_total  = _df["Transport Cost"].sum()
         pac_tc    = reg_tc.get("Pacific", 0)
         int_tc    = reg_tc.get("Interior", 0)
@@ -3882,7 +3882,7 @@ def main():
             "div_sales":       div_sales.to_dict(),
             # Network
             "total_orders":    len(_df),
-            "avg_lt":          _df["Lead Time"].mean(),
+            "avg_lt":          _df["Lead_Time"].mean(),
             "avg_tc":          _df["Transport Cost"].mean(),
             "avg_mg":          _df["Net Margin"].mean(),
             "total_sales":     _df["Sales"].sum(),
@@ -4126,7 +4126,7 @@ def main():
     if ship_f != "All": fdf = fdf[fdf["Ship_Mode"] == ship_f]
 
     # ═══════════ HERO ═══════════
-    avg_lt    = fdf["Lead Time"].mean()
+    avg_lt    = fdf["Lead_Time"].mean()
     # KPI trend arrows (from precomputed KPI_TRENDS)
     _lt_d   = KPI_TRENDS["lt_delta"]
     _mg_d   = KPI_TRENDS["mg_delta"]
@@ -4424,7 +4424,7 @@ def main():
                 # Use boolean indexing instead of .query() to avoid apostrophe issues
                 # e.g. "Lot's O' Nuts" breaks pandas query string parsing
                 _mask = (_hm_data["Factory"] == fac) & (_hm_data["Region"] == reg)
-                val = _hm_data.loc[_mask, "Lead Time"]
+                val = _hm_data.loc[_mask, "Lead_Time"]
                 v = float(val.values[0]) if len(val)>0 else float("nan")
                 row.append(v)
                 row_txt.append(f"{v:.1f}d" if not (v!=v) else "N/A")
@@ -4535,9 +4535,9 @@ def main():
             # ✅ Seasonal analysis
             seas = _agg_seasonal(df)
             fig3 = go.Figure()
-            fig3.add_trace(go.Scatter(x=seas["Order Month"],y=seas["Lead Time"],mode="lines+markers",
+            fig3.add_trace(go.Scatter(x=seas["Order Month"],y=seas["Lead_Time"],mode="lines+markers",
                 line=dict(color=AMBER,width=2.5),marker=dict(size=7,
-                    color=[ROSE if s else CYAN for s in seas["Is Holiday Season"]]),name="Lead Time"))
+                    color=[ROSE if s else CYAN for s in seas["Is Holiday Season"]]),name="Lead_Time"))
             for hm in HOLIDAY_MONTHS:
                 fig3.add_vline(x=hm,line_dash="dot",line_color="rgba(244,63,94,0.35)")
             dark(fig3,"Monthly Lead Time (🔴 = Holiday Season)",300)
@@ -4816,7 +4816,7 @@ def main():
         st.markdown('<div class="stitle">Route Performance Clusters (KMeans · 4 segments)</div>',unsafe_allow_html=True)
         clr_map = {"🚀 Fast & Efficient":CYAN,"⚠️ Slow & At-Risk":ROSE,"💰 High-Value Routes":AMBER,"📦 Standard Ops":"#475569"}
         fig_cl  = px.scatter(cdf.sample(min(3000,len(cdf)),random_state=1),
-            x="Geo Distance KM",y="Lead Time",color="Cluster Label",size="Sales",opacity=0.65,
+            x="Geo Distance KM",y="Lead_Time",color="Cluster Label",size="Sales",opacity=0.65,
             color_discrete_map=clr_map,title="Route Clusters: Distance vs Lead Time")
         dark(fig_cl,h=380); st.plotly_chart(fig_cl, use_container_width=True)
 
@@ -5251,8 +5251,8 @@ def main():
 
         st.markdown('<div class="stitle">Lead Time Distribution — Sanity Check</div>',unsafe_allow_html=True)
         fig_lt = go.Figure()
-        fig_lt.add_trace(go.Histogram(x=df["Lead Time"],nbinsx=50,
-            marker_color=AMBER,opacity=0.75,name="Lead Time"))
+        fig_lt.add_trace(go.Histogram(x=df["Lead_Time"],nbinsx=50,
+            marker_color=AMBER,opacity=0.75,name="Lead_Time"))
         dark(fig_lt,"Lead Time Distribution (after outlier clipping)",300)
         fig_lt.update_layout(xaxis_title="Days",yaxis_title="Count",showlegend=False)
         st.plotly_chart(fig_lt, use_container_width=True)
@@ -5389,7 +5389,7 @@ def main():
                 return "greeting"
             if any(w in q for w in ["deliver","how many order","volume","busiest","most order","count","number of order"]):
                 return "volume"
-            if any(w in q for w in ["fast","speed","quickest","best factory","fastest factory","which factory","lead time","slowest"]):
+            if any(w in q for w in ["fast","speed","quickest","best factory","fastest factory","which factory","Lead_Time","slowest"]):
                 return "factory_speed"
             if any(w in q for w in ["risk","danger","critical lane","worst route","problem route","bottleneck","costly route","expensive route"]):
                 return "risk"
