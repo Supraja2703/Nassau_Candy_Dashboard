@@ -3442,60 +3442,43 @@ def load_data():
     paths = ["dataset.csv",
              os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset.csv"),
              r"C:\Users\supra\Nassau_Candy_Dashboard\dataset.csv"]
+
     df = None
     for p in paths:
         if os.path.exists(p):
-            df = pd.read_csv(p); break
+            df = pd.read_csv(p)
+            break
+
     if df is None:
-        st.error("❌ dataset.csv not found. Place it in the same folder as this script.")
+        st.error("❌ dataset.csv not found.")
         st.stop()
 
-    for c in ["Order Date","Ship_Date"]:
-        df[c] = pd.to_datetime(df[c], dayfirst=True, errors="coerce")
+    # DATE CONVERSION
+    for c in ["Order Date", "Ship_Date"]:
+        if c in df.columns:
+            df[c] = pd.to_datetime(df[c], errors="coerce")
 
-    df["Lead Time"] = (df["Ship_Date"] - df["Order Date"]).dt.days.clip(0, 365)
-    # FIX COLUMN NAMES
-df.columns = df.columns.str.strip()
-df.columns = df.columns.str.replace(" ", "_")
+    # LEAD TIME
+    if "Ship_Date" in df.columns and "Order Date" in df.columns:
+        df["Lead Time"] = (df["Ship_Date"] - df["Order Date"]).dt.days.clip(0, 365)
 
-# CONVERT LEAD TIME SAFELY
-if "Lead_Time" in df.columns:
-    df["Lead_Time"] = pd.to_numeric(df["Lead_Time"], errors="coerce")
+    # 🔥 EVERYTHING BELOW MUST BE INSIDE FUNCTION
 
-# FILL BASED ON SHIP MODE
-if "Ship_Mode" in df.columns and "Lead_Time" in df.columns:
-    for sm, d in SHIP_DAYS.items():
-        mask = (df["Ship_Mode"] == sm) & (df["Lead_Time"].isna())
-        df.loc[mask, "Lead_Time"] = float(d)
+    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.replace(" ", "_")
 
-# FINAL FILL
-if "Lead_Time" in df.columns:
-    df["Lead_Time"] = df["Lead_Time"].fillna(5)
-    df["Factory"] = df["Product Name"].map(PRODUCT_FACTORY).fillna("Unknown")
-    df["Geo Distance KM"] = df.apply(
-        lambda r: fac_dist(r["Factory"], r["Region"]) if r["Factory"] in FACTORIES else np.nan, axis=1)
+    if "Lead_Time" in df.columns:
+        df["Lead_Time"] = pd.to_numeric(df["Lead_Time"], errors="coerce")
 
-    df["Profit Margin"] = (df["Gross Profit"] / df["Sales"].replace(0, np.nan)).clip(0, 1).fillna(0.4)
-    df["Order Month"]   = df["Order Date"].dt.month.fillna(6).astype(int)
-    df["Order Quarter"] = ((df["Order Month"]-1)//3+1).astype(int)
-    df["Ship Mode Days"] = df["Ship_Mode"].map(SHIP_DAYS).fillna(5)
+    if "Ship_Mode" in df.columns and "Lead_Time" in df.columns:
+        for sm, d in SHIP_DAYS.items():
+            mask = (df["Ship_Mode"] == sm) & (df["Lead_Time"].isna())
+            df.loc[mask, "Lead_Time"] = float(d)
 
-    # ✅ Seasonal features
-    df["Is Holiday Season"] = df["Order Month"].isin(HOLIDAY_MONTHS).astype(int)
-    df["Day of Week"]       = df["Order Date"].dt.dayofweek.fillna(2).astype(int)
-    df["Is Weekend"]        = (df["Day of Week"] >= 5).astype(int)
+    if "Lead_Time" in df.columns:
+        df["Lead_Time"] = df["Lead_Time"].fillna(5)
 
-    # ✅ Real transport cost
-    df["Transport Cost"] = df.apply(
-        lambda r: compute_transport_cost(r["Factory"], r["Region"], r["Ship_Mode"], r["Units"], r["Sales"])
-        if r["Factory"] in FACTORIES else 0, axis=1)
-    df["Net Profit"] = df["Gross Profit"] - df["Transport Cost"]
-    df["Net Margin"]  = (df["Net Profit"] / df["Sales"].replace(0,np.nan)).clip(-1,1).fillna(0)
-
-    q1, q3 = df["Lead Time"].quantile(0.01), df["Lead Time"].quantile(0.99)
-    df = df[(df["Lead Time"]>=q1)&(df["Lead Time"]<=q3)].copy()
     return df
-
 # ─────────────────────────────────────────────
 # ✅ ML PIPELINE WITH CROSS-VALIDATION
 # ─────────────────────────────────────────────
